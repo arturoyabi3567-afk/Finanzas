@@ -16,7 +16,9 @@ function months(n = 6) {
   return out;
 }
 
-let TOKEN = '', URL_ = localStorage.getItem('fin_url') || '', D = null, tab = 'resumen', charts = {};
+// URL de tu Web App de Apps Script. Para cambiarla, edita esta línea. Si la dejas vacía, la app abre con datos de prueba.
+const API_URL = 'https://script.google.com/macros/s/AKfycbzMiZoX3MMLzleSkRp6Lw__FRdpCukST_yn1JeeVvv6NmB7XeCahVhMgpJDljqHDMQY/exec';
+let TOKEN = '', URL_ = API_URL, D = null, tab = 'resumen', charts = {};
 const E = { plat: 'Global', from: '', to: '' };
 
 /* ============ Colores de gráficas ============ */
@@ -325,7 +327,7 @@ function derive(name, r) {
 
 /* ============ Arranque y sesión ============ */
 function show(w) {
-  $('#setup').hidden = w !== 'setup'; $('#login').hidden = w !== 'login'; $('#app').hidden = w !== 'app';
+  $('#login').hidden = w !== 'login'; $('#app').hidden = w !== 'app';
   if (w === 'login') setTimeout(() => $('#token').focus(), 50);
 }
 function showLogin() { $('#token').value = ''; $('#lerr').textContent = ''; show('login'); }
@@ -337,11 +339,7 @@ async function enter(auto) {
   }
 }
 $('#lform').onsubmit = e => { e.preventDefault(); TOKEN = $('#token').value.trim(); enter(false); };
-$('#connect').onclick = () => { URL_ = $('#url').value.trim(); localStorage.setItem('fin_url', URL_); localStorage.removeItem('fin_demo'); TOKEN = ''; sessionStorage.removeItem('fin_token'); showLogin(); };
-$('#demo').onclick = () => { URL_ = ''; localStorage.removeItem('fin_url'); localStorage.setItem('fin_demo', '1'); enter(false); };
-$('#settings').onclick = () => { $('#url').value = URL_; show('setup'); };
-$('#change').onclick = () => { $('#url').value = URL_; show('setup'); };
-$('#logout').onclick = () => { TOKEN = ''; sessionStorage.removeItem('fin_token'); URL_ ? showLogin() : show('setup'); };
+$('#logout').onclick = () => { TOKEN = ''; sessionStorage.removeItem('fin_token'); showLogin(); };
 $('#fab').onclick = () => openForm(TABFORMS[tab][0]);
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').hidden = true; };
 $$('#nav button').forEach(b => b.onclick = () => {
@@ -350,6 +348,5 @@ $$('#nav button').forEach(b => b.onclick = () => {
 });
 localStorage.removeItem('fin_token');
 sessionStorage.removeItem('fin_token');
-if (URL_) showLogin();
-else if (localStorage.getItem('fin_demo')) enter(false);
-else show('setup');
+localStorage.removeItem('fin_url'); localStorage.removeItem('fin_demo');
+if (URL_) showLogin(); else enter(false);
