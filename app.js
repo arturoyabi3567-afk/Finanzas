@@ -16,7 +16,7 @@ function months(n = 6) {
   return out;
 }
 
-let TOKEN = sessionStorage.getItem('fin_token') || '', URL_ = localStorage.getItem('fin_url') || '', D = null, tab = 'resumen', charts = {};
+let TOKEN = '', URL_ = localStorage.getItem('fin_url') || '', D = null, tab = 'resumen', charts = {};
 const E = { plat: 'Global', from: '', to: '' };
 
 /* ============ Colores de gráficas ============ */
@@ -330,7 +330,7 @@ function show(w) {
 }
 function showLogin() { $('#token').value = ''; $('#lerr').textContent = ''; show('login'); }
 async function enter(auto) {
-  try { await load(); sessionStorage.setItem('fin_token', TOKEN); show('app'); render(); }
+  try { await load(); show('app'); render(); }
   catch (e) {
     TOKEN = ''; sessionStorage.removeItem('fin_token'); showLogin();
     if (!auto) $('#lerr').textContent = /No autorizado/.test(e.message) ? 'Token incorrecto.' : 'No se pudo conectar: ' + e.message;
@@ -349,6 +349,7 @@ $$('#nav button').forEach(b => b.onclick = () => {
   Object.keys(VIEWS).forEach(t => ($('#t-' + t).hidden = t !== tab)); render();
 });
 localStorage.removeItem('fin_token');
-if (URL_) { TOKEN ? enter(true) : showLogin(); }
+sessionStorage.removeItem('fin_token');
+if (URL_) showLogin();
 else if (localStorage.getItem('fin_demo')) enter(false);
 else show('setup');
