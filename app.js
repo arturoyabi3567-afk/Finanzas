@@ -17,7 +17,7 @@ function months(n = 6) {
 }
 
 // URL de tu Web App de Apps Script. Para cambiarla, edita esta línea. Si la dejas vacía, la app abre con datos de prueba.
-const API_URL = 'https://script.google.com/macros/s/AKfycbzMiZoX3MMLzleSkRp6Lw__FRdpCukST_yn1JeeVvv6NmB7XeCahVhMgpJDljqHDMQY/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzUUMJSlzeeXUcBdlsvvAYx_nEq8HgawlVeVGVM_KqEqYi_nkZKNiMTfXKq9-iMiHkB/exec';
 let TOKEN = '', URL_ = API_URL, D = null, tab = 'resumen', charts = {};
 const E = { plat: 'Global', from: '', to: '' };
 
