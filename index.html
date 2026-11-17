@@ -16,6 +16,7 @@
     <h1>Balance</h1>
     <p class="mu">Pega la URL de tu Web App de Apps Script para conectar tu hoja de cálculo, o explora con datos de prueba.</p>
     <input id="url" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+    <input id="token" type="password" placeholder="Token (opcional)" style="margin-top:10px">
     <div class="row">
       <button class="ghost" id="demo">Usar datos de prueba</button>
       <button id="connect">Conectar</button>
@@ -32,6 +33,7 @@
       <button data-tab="ecommerce">E-commerce</button>
       <button data-tab="trading">Trading</button>
       <button data-tab="finanzas">Finanzas</button>
+      <button data-tab="registros">Registros</button>
     </nav>
     <button class="ghost sm" id="settings">Ajustes</button>
   </header>
@@ -43,6 +45,7 @@
     <section id="t-ecommerce" hidden></section>
     <section id="t-trading" hidden></section>
     <section id="t-finanzas" hidden></section>
+    <section id="t-registros" hidden></section>
   </main>
 
   <button class="fab" id="fab" aria-label="Agregar registro">+</button>
