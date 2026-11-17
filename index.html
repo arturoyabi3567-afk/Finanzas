@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Balance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<section id="setup" hidden>
+  <div class="setup-box">
+    <h1>Balance</h1>
+    <p class="mu">Pega la URL de tu Web App de Apps Script para conectar tu hoja de cálculo, o explora con datos de prueba.</p>
+    <input id="url" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+    <div class="row">
+      <button class="ghost" id="demo">Usar datos de prueba</button>
+      <button id="connect">Conectar</button>
+    </div>
+    <p class="err" id="err"></p>
+  </div>
+</section>
+
+<div id="app" hidden>
+  <header>
+    <h1>Balance</h1>
+    <nav id="nav">
+      <button data-tab="resumen" class="on">Resumen</button>
+      <button data-tab="ecommerce">E-commerce</button>
+      <button data-tab="trading">Trading</button>
+      <button data-tab="finanzas">Finanzas</button>
+    </nav>
+    <button class="ghost sm" id="settings">Ajustes</button>
+  </header>
+
+  <p class="banner" id="banner" hidden>Estás viendo datos de prueba. Conecta tu hoja en Ajustes.</p>
+
+  <main>
+    <section id="t-resumen"></section>
+    <section id="t-ecommerce" hidden></section>
+    <section id="t-trading" hidden></section>
+    <section id="t-finanzas" hidden></section>
+  </main>
+
+  <button class="fab" id="fab" aria-label="Agregar registro">+</button>
+</div>
+
+<div id="modal" hidden><div class="sheet" id="sheet"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
