@@ -16,7 +16,7 @@ function months(n = 6) {
   return out;
 }
 
-let URL_ = localStorage.getItem('fin_url') || '', D = null, tab = 'resumen', charts = {};
+let TOKEN = localStorage.getItem('fin_token') || '', URL_ = localStorage.getItem('fin_url') || '', D = null, tab = 'resumen', charts = {};
 const E = { plat: 'Global', from: '', to: '' };
 
 /* ============ Colores de gráficas ============ */
@@ -50,7 +50,7 @@ function mock() {
     { tipo: 'cat_ahorro', valor: 'Fondo de emergencia', extra: '' },
     { tipo: 'cuenta_trading', valor: 'Fondeo 100K', extra: '' }, { tipo: 'cuenta_trading', valor: 'Fondeo 50K', extra: '' },
     ...['Servicios técnicos', 'Proyectos independientes', 'Eventos'].map(v => ({ tipo: 'cat_ingreso', valor: v, extra: '' })),
-    { tipo: 'retencion', valor: 'SAT (reserva %)', extra: 10 }, { tipo: 'saldo_inicial', valor: 'Saldo inicial banco', extra: 25000 }
+    { tipo: 'retencion', valor: 'SAT (reserva %)', extra: 10 }, { tipo: 'presupuesto', valor: 'Alimentación', extra: 3000 }, { tipo: 'presupuesto', valor: 'Transporte', extra: 1200 }, { tipo: 'presupuesto', valor: 'Cuidado Personal', extra: 800 }, { tipo: 'saldo_inicial', valor: 'Saldo inicial banco', extra: 25000 }
   ];
   const inv = [
     ['AUD-01', 'Audífonos Bluetooth', 180, 35, 150, 459], ['LMP-02', 'Lámpara LED escritorio', 95, 28, 120, 289],
@@ -77,24 +77,38 @@ function mock() {
   for (let m = 0; m < 4; m++) { const f = ago(m * 30 + 2);
     fin.push({ fecha: f, tipo: 'Gasto Fijo', categoria: 'Renta', descripcion: 'Renta', monto_mxn: 5500, metodo_pago: 'SPEI' }, { fecha: f, tipo: 'Gasto Fijo', categoria: 'Servicios', descripcion: 'Luz e internet', monto_mxn: 900, metodo_pago: 'Tarjeta' }, { fecha: f, tipo: 'Gasto Fijo', categoria: 'Gimnasio', descripcion: 'Mensualidad', monto_mxn: 600, metodo_pago: 'Tarjeta' }, { fecha: f, tipo: 'Ahorro/Reserva', categoria: 'Fondo de emergencia', descripcion: 'Aportación', monto_mxn: 1000, metodo_pago: 'SPEI' });
     for (let k = 0; k < 8; k++) fin.push({ fecha: ago(m * 30 + k * 3), tipo: 'Gasto Variable', categoria: pick(['Alimentación', 'Transporte', 'Cuidado Personal']), descripcion: 'Gasto', monto_mxn: Math.round(120 + r() * 500), metodo_pago: pick(['Efectivo', 'Tarjeta']) }); }
-  const cuentas = [[88, 'Fondeo 100K', 'FundedFirm', 100000, 1800, 'Fase 1'], [60, 'Fondeo 100K', '', 0, 0, 'Fase 2'], [40, 'Fondeo 100K', '', 0, 0, 'Fondeada'], [45, 'Fondeo 50K', 'FundedFirm', 50000, 950, 'Fase 1'], [30, 'Fondeo 50K', '', 0, 0, 'Perdida'], [20, 'Fondeo 50K', 'FundedFirm', 50000, 950, 'Fase 1']].map(([d, cuenta, fondeadora, tamano_usd, costo_mxn, estado]) => ({ fecha: ago(d), cuenta, fondeadora, tamano_usd, costo_mxn, estado }));
-  return { Configuracion: cfg, Inventario: inv, Ventas_Ecommerce: ventas, Trading_Bitacora: bit, Trading_Retiros: ret, Otros_Ingresos: otros, Finanzas_Personales: fin, Trading_Cuentas: cuentas };
+  const cuentas = [[88, 'Fondeo 100K', 'FundedFirm', 100000, 1800, 'Fase 1'], [60, 'Fondeo 100K', '', 0, 0, 'Fase 2'], [40, 'Fondeo 100K', '', 0, 0, 'Fondeada'], [45, 'Fondeo 50K', 'FundedFirm', 50000, 950, 'Fase 1'], [30, 'Fondeo 50K', '', 0, 0, 'Perdida'], [20, 'Fondeo 50K', 'FundedFirm', 50000, 950, 'Fase 1']].map(([d, cuenta, fondeadora, tamano_usd, costo_mxn, estado]) => ({ fecha: ago(d), cuenta, fondeadora, tamano_usd, costo_mxn, estado, meta_pct: tamano_usd ? 8 : 0, dd_max_pct: tamano_usd ? 10 : 0 }));
+  const compras = [[85, 'AUD-01', 100, 22000], [50, 'SMW-03', 30, 12000], [20, 'CAM-04', 40, 10500]].map(([d, sku, unidades, costo_mxn]) => { inv.find(i => i.sku === sku).stock_actual += unidades; return { fecha: ago(d), sku, unidades, costo_mxn, proveedor: 'Proveedor' }; });
+  return { Configuracion: cfg, Inventario: inv, Ventas_Ecommerce: ventas, Trading_Bitacora: bit, Trading_Retiros: ret, Otros_Ingresos: otros, Finanzas_Personales: fin, Trading_Cuentas: cuentas, Compras_Inventario: compras };
 }
 
 /* ============ Conexión ============ */
 async function load() {
   if (URL_) {
-    const res = await (await fetch(URL_ + '?action=all')).json();
+    const res = await (await fetch(URL_ + '?action=all&token=' + encodeURIComponent(TOKEN))).json();
     if (!res.ok) throw new Error(res.error);
     D = res.data;
   } else D = mock();
-  D.Trading_Cuentas ||= [];
+  D.Trading_Cuentas ||= []; D.Compras_Inventario ||= [];
   $('#banner').hidden = !!URL_;
 }
-async function post(sheet, row) {
+async function sync(body) {
   if (!URL_) return;
-  const res = await (await fetch(URL_, { method: 'POST', body: JSON.stringify({ action: 'add', sheet, row }) })).json();
-  if (!res.ok) alert('No se pudo guardar en la hoja: ' + res.error);
+  const res = await (await fetch(URL_, { method: 'POST', body: JSON.stringify({ ...body, token: TOKEN }) })).json();
+  if (!res.ok) { alert('No se pudo guardar en la hoja: ' + res.error); return; }
+  await load(); render();
+}
+const post = (sheet, row) => sync({ action: 'add', sheet, row });
+function stockFx(sheet, row, dir) {
+  const i = D.Inventario.find(x => x.sku === row.sku), u = +row.unidades || 0; if (!i) return;
+  if (sheet === 'Ventas_Ecommerce') i.stock_actual -= dir * u;
+  if (sheet === 'Compras_Inventario') i.stock_actual += dir * u;
+}
+async function removeRec(sheet, rec) {
+  if (!confirm('¿Borrar este registro? No se puede deshacer.')) return;
+  if (URL_ && !rec._row) return alert('Espera a que termine de sincronizar e inténtalo de nuevo.');
+  stockFx(sheet, rec, -1); D[sheet] = D[sheet].filter(x => x !== rec); render();
+  try { await sync({ action: 'delete', sheet, _row: rec._row }); } catch (e) { alert('Error de red: ' + e.message); }
 }
 const cfg = t => D.Configuracion.filter(x => x.tipo === t).map(x => x.valor);
 const cfgNum = (t, d = 0) => +(D.Configuracion.find(x => x.tipo === t)?.extra ?? d);
@@ -103,11 +117,11 @@ const cfgNum = (t, d = 0) => +(D.Configuracion.find(x => x.tipo === t)?.extra ??
 const netoVenta = x => x.precio_bruto - x.comision - x.envio - x.impuestos;
 function calc() {
   const V = D.Ventas_Ecommerce, T = D.Trading_Retiros, O = D.Otros_Ingresos, F = D.Finanzas_Personales, cur = mk(today());
-  const liquido = cfgNum('saldo_inicial') + sum(V.filter(x => x.estado_cobro === 'Cobrado'), netoVenta) + sum(T.filter(x => x.estado === 'Recibido'), x => x.neto_mxn) + sum(O, x => x.monto_neto) - sum(F, x => x.monto_mxn) - sum(D.Trading_Cuentas, x => x.costo_mxn);
+  const liquido = cfgNum('saldo_inicial') + sum(V.filter(x => x.estado_cobro === 'Cobrado'), netoVenta) + sum(T.filter(x => x.estado === 'Recibido'), x => x.neto_mxn) + sum(O, x => x.monto_neto) - sum(F, x => x.monto_mxn) - sum(D.Trading_Cuentas, x => x.costo_mxn) - sum(D.Compras_Inventario, x => x.costo_mxn);
   const transito = sum(V.filter(x => x.estado_cobro !== 'Cobrado'), netoVenta) + sum(T.filter(x => x.estado !== 'Recibido'), x => x.neto_mxn);
   const muerto = sum(D.Inventario, i => i.stock_actual * (+i.costo_unitario + +i.costo_envio_prorrateado));
   const ing = sum(V.filter(x => mk(x.fecha) === cur), x => x.utilidad_neta) + sum(T.filter(x => mk(x.fecha) === cur), x => x.neto_mxn) + sum(O.filter(x => mk(x.fecha) === cur), x => x.monto_neto);
-  const egr = sum(F.filter(x => mk(x.fecha) === cur), x => x.monto_mxn) + sum(D.Trading_Cuentas.filter(x => mk(x.fecha) === cur), x => x.costo_mxn);
+  const egr = sum(F.filter(x => mk(x.fecha) === cur), x => x.monto_mxn) + sum(D.Trading_Cuentas.filter(x => mk(x.fecha) === cur), x => x.costo_mxn) + sum(D.Compras_Inventario.filter(x => mk(x.fecha) === cur), x => x.costo_mxn);
   return { liquido, transito, muerto, ing, egr, balance: ing - egr, sat: Math.max(0, ing) * cfgNum('retencion', 10) / 100 };
 }
 const kpi = (l, v, sub = '', c = '', hero = '') => `<div class="card kpi ${hero}"><span class="mu">${l}</span><b class="${c}">${v}</b><small>${sub}</small></div>`;
@@ -131,7 +145,7 @@ function viewResumen() {
       { label: 'E-commerce', data: by(D.Ventas_Ecommerce, x => x.utilidad_neta), backgroundColor: C.sand, stack: 'i' },
       { label: 'Trading', data: by(D.Trading_Retiros, x => x.neto_mxn), backgroundColor: C.pos, stack: 'i' },
       { label: 'Otros', data: by(D.Otros_Ingresos, x => x.monto_neto), backgroundColor: C.slate, stack: 'i' },
-      { label: 'Egresos', type: 'line', data: by(D.Finanzas_Personales, x => x.monto_mxn).map((v, i) => v + sum(D.Trading_Cuentas.filter(x => mk(x.fecha) === M[i]), x => x.costo_mxn)), borderColor: C.neg, backgroundColor: C.neg, tension: .3 }]
+      { label: 'Egresos', type: 'line', data: by(D.Finanzas_Personales, x => x.monto_mxn).map((v, i) => v + sum(D.Trading_Cuentas.filter(x => mk(x.fecha) === M[i]), x => x.costo_mxn) + sum(D.Compras_Inventario.filter(x => mk(x.fecha) === M[i]), x => x.costo_mxn)), borderColor: C.neg, backgroundColor: C.neg, tension: .3 }]
   }, { stack: true });
 }
 
@@ -161,7 +175,7 @@ function viewTrading() {
   const w = B.filter(x => x.resultado_usd > 0), l = B.filter(x => x.resultado_usd < 0);
   const gw = sum(w, x => x.resultado_usd), gl = Math.abs(sum(l, x => x.resultado_usd));
   const last = {};
-  [...Cu].sort((a, b) => a.fecha.localeCompare(b.fecha)).forEach(x => { const p = last[x.cuenta] || {}; last[x.cuenta] = { ...x, fondeadora: x.fondeadora || p.fondeadora, tamano_usd: +x.tamano_usd || p.tamano_usd }; });
+  [...Cu].sort((a, b) => a.fecha.localeCompare(b.fecha)).forEach(x => { const p = last[x.cuenta] || {}; last[x.cuenta] = { ...x, fondeadora: x.fondeadora || p.fondeadora, tamano_usd: +x.tamano_usd || p.tamano_usd, meta_pct: +x.meta_pct || p.meta_pct, dd_max_pct: +x.dd_max_pct || p.dd_max_pct }; });
   const ac = Object.values(last).map(x => ({ ...x, gastado: sum(Cu.filter(c => c.cuenta === x.cuenta), c => c.costo_mxn), pnl: sum(all.filter(t => t.cuenta === x.cuenta), t => t.resultado_usd) }));
   const n = e => ac.filter(x => x.estado === e).length, inv = sum(Cu, x => x.costo_mxn), ret = sum(R.filter(x => x.estado === 'Recibido'), x => x.neto_mxn);
   $('#t-trading').innerHTML = `<div class="grid g4" style="margin-top:6px">
@@ -177,7 +191,7 @@ function viewTrading() {
     ${kpi('Ganancia vs. pérdida promedio', `${usd(w.length ? gw / w.length : 0)} / ${usd(l.length ? -gl / l.length : 0)}`)}
     ${kpi('Resultado acumulado', usd(gw - gl), TR.modo === 'Fondeada' ? '' : 'Incluye simulación', cls(gw - gl))}</div>
   <div class="grid g2" style="margin-top:14px">${chartCard('c-eq', 'Curva de equidad y drawdown (USD)')}${chartCard('c-day', 'Resultado diario (USD)')}</div>
-  <h2>Cuentas y evaluaciones</h2><div class="card">${tbl([['Cuenta', x => x.cuenta], ['Fondeadora', x => x.fondeadora || '–'], ['Tamaño', x => usd(x.tamano_usd), 'r'], ['Estado', x => x.estado === 'Perdida' ? `<span class="chip">Perdida</span>` : x.estado], ['Invertido', x => mxn(x.gastado), 'r'], ['P&L USD', x => `<span class="${x.estado === 'Fondeada' ? cls(x.pnl) : 'mu'}">${usd(x.pnl)}</span>`, 'r']], ac)}</div>
+  ${rules(ac, all)}<h2>Cuentas y evaluaciones</h2><div class="card">${tbl([['Cuenta', x => x.cuenta], ['Fondeadora', x => x.fondeadora || '–'], ['Tamaño', x => usd(x.tamano_usd), 'r'], ['Estado', x => x.estado === 'Perdida' ? `<span class="chip">Perdida</span>` : x.estado], ['Invertido', x => mxn(x.gastado), 'r'], ['P&L USD', x => `<span class="${x.estado === 'Fondeada' ? cls(x.pnl) : 'mu'}">${usd(x.pnl)}</span>`, 'r']], ac)}</div>
   <h2>Retiros</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Cuenta', x => x.cuenta], ['USD', x => usd(x.monto_usd), 'r'], ['Neto MXN', x => mxn(x.neto_mxn), 'r'], ['Estado', x => x.estado]], [...R].reverse())}</div>`;
   let acc = 0, peak = 0; const eq = B.map(x => (acc += +x.resultado_usd)), dd = eq.map(v => (peak = Math.max(peak, v), v - peak));
   ch('c-eq', 'line', { labels: B.map(x => x.fecha), datasets: [{ label: 'Equidad', data: eq, borderColor: C.sand, pointRadius: 0, tension: .25 }, { label: 'Drawdown', data: dd, borderColor: C.neg, backgroundColor: 'rgba(217,139,139,.15)', fill: true, pointRadius: 0, tension: .25 }] });
@@ -191,36 +205,74 @@ function viewFin() {
   const cats = [...new Set(F.filter(x => x.tipo !== 'Ahorro/Reserva').map(x => x.categoria))];
   $('#t-finanzas').innerHTML = `<div class="grid g3" style="margin-top:6px">${kpi('Gastos del mes', mxn(sum(F.filter(x => mk(x.fecha) === mk(today()) && x.tipo !== 'Ahorro/Reserva'), x => x.monto_mxn)))}${kpi('Ahorro acumulado', mxn(sum(F.filter(x => x.tipo === 'Ahorro/Reserva'), x => x.monto_mxn)), '', 'pos')}${kpi('Otros ingresos netos', mxn(sum(O, x => x.monto_neto)), `${O.length} registros`)}</div>
   <div class="grid g2" style="margin-top:14px">${chartCard('c-type', 'Fijos vs. variables')}${chartCard('c-cat', 'Evolución mensual por categoría')}</div>
-  <h2>Otros ingresos</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Concepto', x => x.concepto], ['Categoría', x => x.categoria], ['Neto', x => mxn(x.monto_neto), 'r']], [...O].reverse())}</div>`;
+  ${budget()}<h2>Otros ingresos</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Concepto', x => x.concepto], ['Categoría', x => x.categoria], ['Neto', x => mxn(x.monto_neto), 'r']], [...O].reverse())}</div>`;
   ch('c-type', 'doughnut', { labels: tipos, datasets: [{ data: tipos.map(t => sum(F.filter(x => x.tipo === t), x => x.monto_mxn)), backgroundColor: [C.sand, C.slate, C.pos], borderWidth: 0 }] });
   ch('c-cat', 'bar', { labels: M, datasets: cats.map((c, i) => ({ label: c, data: M.map(m => sum(F.filter(x => x.categoria === c && mk(x.fecha) === m), x => x.monto_mxn)), backgroundColor: PAL[i % 6] })) }, { stack: true });
 }
 
-const VIEWS = { resumen: viewResumen, ecommerce: viewEcom, trading: viewTrading, finanzas: viewFin };
+function rules(ac, all) {
+  const act = ac.filter(x => ['Fase 1', 'Fase 2', 'Fondeada'].includes(x.estado) && x.tamano_usd && (x.meta_pct || x.dd_max_pct));
+  if (!act.length) return '';
+  return `<h2>Reglas de cuentas activas</h2><div class="grid g3">${act.map(x => {
+    let c = 0, pk = 0; all.filter(t => t.cuenta === x.cuenta && t.fecha >= x.fecha).forEach(t => { c += +t.resultado_usd; pk = Math.max(pk, c); });
+    const goal = x.tamano_usd * x.meta_pct / 100, lim = x.tamano_usd * x.dd_max_pct / 100;
+    const m = goal ? Math.min(100, Math.max(0, c / goal * 100)) : 0, d = lim ? Math.min(100, (pk - c) / lim * 100) : 0;
+    return `<div class="card"><h4>${x.cuenta} · ${x.estado}</h4>
+      ${goal ? `<small>Meta: ${usd(c)} de ${usd(goal)}</small><div class="meter"><i style="width:${m}%"></i></div>` : ''}
+      ${lim ? `<small>Drawdown desde el máximo: ${usd(pk - c)} de ${usd(lim)}</small><div class="meter ${d > 70 ? 'warn' : ''}"><i style="width:${d}%"></i></div>` : ''}</div>`;
+  }).join('')}</div><p class="mu" style="font-size:13px;margin-top:8px">Se mide desde el último cambio de estado de cada cuenta.</p>`;
+}
+function budget() {
+  const bud = {}; D.Configuracion.filter(x => x.tipo === 'presupuesto').forEach(x => bud[x.valor] = +x.extra || 0);
+  const k = Object.keys(bud), cur = mk(today());
+  if (!k.length) return '<h2>Presupuesto del mes</h2><p class="mu">Define un límite por categoría con el botón +.</p>';
+  return `<h2>Presupuesto del mes</h2><div class="card">${k.map(c => {
+    const s = sum(D.Finanzas_Personales.filter(x => x.categoria === c && mk(x.fecha) === cur), x => x.monto_mxn), p = bud[c] ? s / bud[c] * 100 : 0;
+    return `<div><div style="display:flex;justify-content:space-between"><span>${c}</span><span class="${p > 100 ? 'neg' : 'mu'}">${mxn(s)} de ${mxn(bud[c])}</span></div><div class="meter ${p > 85 ? 'warn' : ''}"><i style="width:${Math.min(100, p)}%"></i></div></div>`;
+  }).join('')}</div>`;
+}
+const RG = { sheet: 'Ventas_Ecommerce' };
+const SHEETFORM = { Configuracion: 'config', Ventas_Ecommerce: 'venta', Compras_Inventario: 'compra', Inventario: 'producto', Trading_Bitacora: 'operacion', Trading_Cuentas: 'cuenta', Trading_Retiros: 'retiro', Otros_Ingresos: 'ingreso', Finanzas_Personales: 'gasto' };
+const SHEETNAME = { Configuracion: 'Catálogos y presupuestos', Ventas_Ecommerce: 'Ventas', Compras_Inventario: 'Compras de mercancía', Inventario: 'Inventario', Trading_Bitacora: 'Operaciones', Trading_Cuentas: 'Cuentas de fondeo', Trading_Retiros: 'Retiros', Otros_Ingresos: 'Otros ingresos', Finanzas_Personales: 'Gastos personales' };
+function viewRegistros() {
+  const list = D[RG.sheet], F = FORMS[SHEETFORM[RG.sheet]].f, rows = list.slice().reverse().slice(0, 60);
+  const cell = v => typeof v === 'number' && !Number.isInteger(v) ? v.toFixed(2) : (v ?? '');
+  $('#t-registros').innerHTML = `<div class="bar" style="margin-top:6px"><select id="f-sheet">${Object.keys(SHEETNAME).map(s => `<option value="${s}" ${s === RG.sheet ? 'selected' : ''}>${SHEETNAME[s]}</option>`).join('')}</select></div>
+  <div class="card">${rows.length ? tbl([...F.map(f => [f[1], x => cell(x[f[0]])]), ['', x => `<button class="ghost sm" data-ed="${list.indexOf(x)}">Editar</button> <button class="ghost sm" data-del="${list.indexOf(x)}">Borrar</button>`, 'r']], rows) : '<p class="mu">Aún no hay registros.</p>'}</div>
+  <p class="mu" style="margin-top:10px;font-size:13px">Se muestran los 60 más recientes.</p>`;
+  $('#f-sheet').onchange = e => { RG.sheet = e.target.value; viewRegistros(); };
+  $$('[data-ed]').forEach(b => b.onclick = () => openForm(SHEETFORM[RG.sheet], list[+b.dataset.ed]));
+  $$('[data-del]').forEach(b => b.onclick = () => removeRec(RG.sheet, list[+b.dataset.del]));
+}
+const VIEWS = { resumen: viewResumen, ecommerce: viewEcom, trading: viewTrading, finanzas: viewFin, registros: viewRegistros };
 function render() { VIEWS[tab](); }
 
 /* ============ Formularios ============ */
 const catKey = v => 'cat_' + ({ 'Gasto Fijo': 'fijo', 'Gasto Variable': 'variable', 'Ahorro/Reserva': 'ahorro' }[v.tipo] || 'fijo');
 const FORMS = {
   venta: { sheet: 'Ventas_Ecommerce', title: 'Venta', f: [['fecha', 'Fecha', 'date'], ['plataforma', 'Plataforma', 'cfg:plataforma'], ['sku', 'Producto', 'sku'], ['unidades', 'Unidades', 'num'], ['precio_bruto', 'Precio de venta bruto', 'num'], ['comision', 'Comisión de plataforma', 'num'], ['envio', 'Envío / logística', 'num'], ['impuestos', 'Impuestos retenidos (ISR/IVA)', 'num'], ['estado_cobro', 'Estado del pago', 'opt:En tránsito,Cobrado']] },
-  cuenta: { sheet: 'Trading_Cuentas', title: 'Cuenta / evaluación', f: [['fecha', 'Fecha', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['fondeadora', 'Fondeadora (solo si es nueva)', 'text'], ['tamano_usd', 'Tamaño de cuenta USD (si es nueva)', 'num'], ['costo_mxn', 'Costo pagado MXN (evaluación o reset)', 'num'], ['estado', 'Estado actual', 'opt:Fase 1,Fase 2,Fondeada,Perdida']] },
+  cuenta: { sheet: 'Trading_Cuentas', title: 'Cuenta / evaluación', f: [['fecha', 'Fecha', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['fondeadora', 'Fondeadora (solo si es nueva)', 'text'], ['tamano_usd', 'Tamaño de cuenta USD (si es nueva)', 'num'], ['costo_mxn', 'Costo pagado MXN (evaluación o reset)', 'num'], ['meta_pct', 'Meta de ganancia % (si es nueva)', 'num'], ['dd_max_pct', 'Drawdown máximo % (si es nueva)', 'num'], ['estado', 'Estado actual', 'opt:Fase 1,Fase 2,Fondeada,Perdida']] },
+  compra: { sheet: 'Compras_Inventario', title: 'Compra de mercancía', f: [['fecha', 'Fecha', 'date'], ['sku', 'Producto', 'sku'], ['unidades', 'Unidades compradas', 'num'], ['costo_mxn', 'Costo total pagado MXN (con envío)', 'num'], ['proveedor', 'Proveedor / nota', 'text']] },
+  presupuesto: { sheet: 'Configuracion', title: 'Presupuesto', f: [['valor', 'Categoría', 'cfg:cat_all'], ['extra', 'Límite mensual MXN', 'num']] },
+  config: { sheet: 'Configuracion', title: 'Catálogo', f: [['tipo', 'Tipo', 'opt:plataforma,cat_fijo,cat_variable,cat_ahorro,cuenta_trading,cat_ingreso,retencion,saldo_inicial,presupuesto'], ['valor', 'Nombre', 'text'], ['extra', 'Valor extra (comisión %, límite, monto)', 'text']] },
   producto: { sheet: 'Inventario', title: 'Producto', f: [['sku', 'SKU', 'text'], ['producto', 'Nombre', 'text'], ['costo_unitario', 'Costo unitario', 'num'], ['costo_envio_prorrateado', 'Envío prorrateado', 'num'], ['stock_inicial', 'Stock inicial', 'num'], ['precio_sugerido', 'Precio sugerido', 'num'], ['stock_minimo', 'Alerta de stock bajo', 'num']] },
   operacion: { sheet: 'Trading_Bitacora', title: 'Operación', f: [['fecha', 'Fecha', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['instrumento', 'Instrumento', 'text'], ['direccion', 'Dirección', 'opt:Buy,Sell'], ['riesgo_pct', 'Riesgo %', 'num'], ['resultado_usd', 'Resultado USD', 'num'], ['resultado_pips', 'Pips / puntos', 'num'], ['fase', 'Estado de la cuenta', 'opt:Fase 1,Fase 2,Fondeada'], ['notas', 'Notas', 'text']] },
   retiro: { sheet: 'Trading_Retiros', title: 'Retiro', f: [['fecha', 'Fecha de solicitud', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['monto_usd', 'Monto bruto USD', 'num'], ['comision_red', 'Comisión de red (USDT TRC20)', 'num'], ['tipo_cambio', 'Tipo de cambio', 'num'], ['estado', 'Estado', 'opt:Solicitado,En tránsito,Recibido']] },
   ingreso: { sheet: 'Otros_Ingresos', title: 'Ingreso', f: [['fecha', 'Fecha', 'date'], ['concepto', 'Concepto', 'text'], ['categoria', 'Categoría', 'cfg:cat_ingreso'], ['monto_bruto', 'Monto bruto', 'num'], ['impuestos', 'Impuestos / retenciones', 'num']] },
   gasto: { sheet: 'Finanzas_Personales', title: 'Gasto', f: [['fecha', 'Fecha', 'date'], ['tipo', 'Tipo', 'opt:Gasto Fijo,Gasto Variable,Ahorro/Reserva'], ['categoria', 'Categoría', 'cfg:*'], ['descripcion', 'Descripción', 'text'], ['monto_mxn', 'Monto MXN', 'num'], ['metodo_pago', 'Método de pago', 'opt:Efectivo,Tarjeta,SPEI']] }
 };
-const TABFORMS = { resumen: ['venta', 'operacion', 'retiro', 'ingreso', 'gasto'], ecommerce: ['venta', 'producto'], trading: ['operacion', 'cuenta', 'retiro'], finanzas: ['gasto', 'ingreso'] };
+const TABFORMS = { resumen: ['venta', 'operacion', 'retiro', 'ingreso', 'gasto'], ecommerce: ['venta', 'compra', 'producto'], trading: ['operacion', 'cuenta', 'retiro'], finanzas: ['gasto', 'ingreso', 'presupuesto'], registros: ['venta', 'compra', 'producto', 'operacion', 'cuenta', 'retiro', 'ingreso', 'gasto', 'presupuesto', 'config'] };
 
 function optionsFor(f, vals) {
   const t = f[2];
   if (t.startsWith('opt:')) return t.slice(4).split(',');
+  if (t === 'cfg:cat_all') return [...cfg('cat_fijo'), ...cfg('cat_variable')];
   const key = t === 'cfg:*' ? catKey(vals) : t.slice(4);
   return [...cfg(key), '＋ Agregar nuevo…'];
 }
-function openForm(name) {
+function openForm(name, rec) {
   const F = FORMS[name], names = TABFORMS[tab];
-  $('#sheet').innerHTML = `<div class="tabs">${names.map(n => `<button class="${n === name ? 'on' : ''}" data-form="${n}">${FORMS[n].title}</button>`).join('')}</div>
+  $('#sheet').innerHTML = `${rec ? `<h3>Editar: ${F.title}</h3>` : `<div class="tabs">${names.map(n => `<button class="${n === name ? 'on' : ''}" data-form="${n}">${FORMS[n].title}</button>`).join('')}</div>`}
   <form id="form">${F.f.map(f => `<label>${f[1]}</label>${fieldHtml(f)}`).join('')}<div class="row"><button type="button" class="ghost" id="cancel">Cancelar</button><button>Guardar</button></div></form>`;
   $('#modal').hidden = false;
   $$('[data-form]').forEach(b => b.onclick = () => openForm(b.dataset.form));
@@ -233,12 +285,25 @@ function openForm(name) {
       if (v) { const key = f[2] === 'cfg:*' ? catKey(vals()) : f[2].slice(4); const row = { tipo: key, valor: v.trim(), extra: '' }; D.Configuracion.push(row); post('Configuracion', row); refill(); s.value = v.trim(); } else refill();
     } else if (s.name === 'tipo') refill();
   });
+  if (rec) $$('[name]', form).forEach(el => {
+    const v = rec[el.name]; if (v === undefined || v === '') return;
+    if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === String(v))) el.add(new Option(v, v));
+    el.value = v; if (el.name === 'tipo') refill();
+  });
   form.onsubmit = async e => {
     e.preventDefault();
     const row = vals(); F.f.forEach(f => { if (f[2] === 'num') row[f[0]] = +row[f[0]] || 0; });
-    derive(name, row);
-    D[F.sheet].push(row); $('#modal').hidden = true; render();
-    try { await post(F.sheet, row); } catch (err) { alert('Error de red: ' + err.message); }
+    derive(name, row); const sh = F.sheet;
+    if (rec) {
+      if (URL_ && !rec._row) return alert('Espera a que termine de sincronizar e inténtalo de nuevo.');
+      if (name === 'producto') row.stock_actual = rec.stock_actual;
+      stockFx(sh, rec, -1); Object.assign(rec, row); stockFx(sh, rec, 1);
+      $('#modal').hidden = true; render();
+      try { await sync({ action: 'update', sheet: sh, _row: rec._row, row }); } catch (err) { alert('Error de red: ' + err.message); }
+    } else {
+      D[sh].push(row); stockFx(sh, row, 1); $('#modal').hidden = true; render();
+      try { await post(sh, row); } catch (err) { alert('Error de red: ' + err.message); }
+    }
   };
 }
 function fieldHtml(f) {
@@ -251,10 +316,11 @@ function fieldHtml(f) {
   return `<select name="${n}" ${t.startsWith('cfg') ? 'data-cfg' : ''}>${o.map(x => `<option>${x}</option>`).join('')}</select>`;
 }
 function derive(name, r) {
-  if (name === 'venta') { const i = D.Inventario.find(x => x.sku === r.sku); r.costo_producto = (+i.costo_unitario + +i.costo_envio_prorrateado) * r.unidades; r.utilidad_neta = r.precio_bruto - r.comision - r.envio - r.impuestos - r.costo_producto; i.stock_actual -= r.unidades; }
+  if (name === 'venta') { const i = D.Inventario.find(x => x.sku === r.sku); r.costo_producto = (+i.costo_unitario + +i.costo_envio_prorrateado) * r.unidades; r.utilidad_neta = r.precio_bruto - r.comision - r.envio - r.impuestos - r.costo_producto; }
   if (name === 'retiro') r.neto_mxn = (r.monto_usd - r.comision_red) * r.tipo_cambio;
   if (name === 'ingreso') r.monto_neto = r.monto_bruto - r.impuestos;
   if (name === 'producto') r.stock_actual = r.stock_inicial;
+  if (name === 'presupuesto') r.tipo = 'presupuesto';
 }
 
 /* ============ Arranque ============ */
@@ -263,9 +329,9 @@ async function start() {
   try { await load(); show(true); render(); }
   catch (e) { show(false); $('#err').textContent = 'No se pudo conectar: ' + e.message + '. Revisa que la implementación sea pública.'; }
 }
-$('#connect').onclick = () => { URL_ = $('#url').value.trim(); localStorage.setItem('fin_url', URL_); localStorage.removeItem('fin_demo'); start(); };
+$('#connect').onclick = () => { URL_ = $('#url').value.trim(); TOKEN = $('#token').value.trim(); localStorage.setItem('fin_url', URL_); localStorage.setItem('fin_token', TOKEN); localStorage.removeItem('fin_demo'); start(); };
 $('#demo').onclick = () => { URL_ = ''; localStorage.removeItem('fin_url'); localStorage.setItem('fin_demo', '1'); start(); };
-$('#settings').onclick = () => { $('#url').value = URL_; show(false); };
+$('#settings').onclick = () => { $('#url').value = URL_; $('#token').value = TOKEN; show(false); };
 $('#fab').onclick = () => openForm(TABFORMS[tab][0]);
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').hidden = true; };
 $$('#nav button').forEach(b => b.onclick = () => {
