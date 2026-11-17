@@ -77,7 +77,8 @@ function mock() {
   for (let m = 0; m < 4; m++) { const f = ago(m * 30 + 2);
     fin.push({ fecha: f, tipo: 'Gasto Fijo', categoria: 'Renta', descripcion: 'Renta', monto_mxn: 5500, metodo_pago: 'SPEI' }, { fecha: f, tipo: 'Gasto Fijo', categoria: 'Servicios', descripcion: 'Luz e internet', monto_mxn: 900, metodo_pago: 'Tarjeta' }, { fecha: f, tipo: 'Gasto Fijo', categoria: 'Gimnasio', descripcion: 'Mensualidad', monto_mxn: 600, metodo_pago: 'Tarjeta' }, { fecha: f, tipo: 'Ahorro/Reserva', categoria: 'Fondo de emergencia', descripcion: 'Aportación', monto_mxn: 1000, metodo_pago: 'SPEI' });
     for (let k = 0; k < 8; k++) fin.push({ fecha: ago(m * 30 + k * 3), tipo: 'Gasto Variable', categoria: pick(['Alimentación', 'Transporte', 'Cuidado Personal']), descripcion: 'Gasto', monto_mxn: Math.round(120 + r() * 500), metodo_pago: pick(['Efectivo', 'Tarjeta']) }); }
-  return { Configuracion: cfg, Inventario: inv, Ventas_Ecommerce: ventas, Trading_Bitacora: bit, Trading_Retiros: ret, Otros_Ingresos: otros, Finanzas_Personales: fin };
+  const cuentas = [[88, 'Fondeo 100K', 'FundedFirm', 100000, 1800, 'Fase 1'], [60, 'Fondeo 100K', '', 0, 0, 'Fase 2'], [40, 'Fondeo 100K', '', 0, 0, 'Fondeada'], [45, 'Fondeo 50K', 'FundedFirm', 50000, 950, 'Fase 1'], [30, 'Fondeo 50K', '', 0, 0, 'Perdida'], [20, 'Fondeo 50K', 'FundedFirm', 50000, 950, 'Fase 1']].map(([d, cuenta, fondeadora, tamano_usd, costo_mxn, estado]) => ({ fecha: ago(d), cuenta, fondeadora, tamano_usd, costo_mxn, estado }));
+  return { Configuracion: cfg, Inventario: inv, Ventas_Ecommerce: ventas, Trading_Bitacora: bit, Trading_Retiros: ret, Otros_Ingresos: otros, Finanzas_Personales: fin, Trading_Cuentas: cuentas };
 }
 
 /* ============ Conexión ============ */
@@ -87,6 +88,7 @@ async function load() {
     if (!res.ok) throw new Error(res.error);
     D = res.data;
   } else D = mock();
+  D.Trading_Cuentas ||= [];
   $('#banner').hidden = !!URL_;
 }
 async function post(sheet, row) {
@@ -101,11 +103,11 @@ const cfgNum = (t, d = 0) => +(D.Configuracion.find(x => x.tipo === t)?.extra ??
 const netoVenta = x => x.precio_bruto - x.comision - x.envio - x.impuestos;
 function calc() {
   const V = D.Ventas_Ecommerce, T = D.Trading_Retiros, O = D.Otros_Ingresos, F = D.Finanzas_Personales, cur = mk(today());
-  const liquido = cfgNum('saldo_inicial') + sum(V.filter(x => x.estado_cobro === 'Cobrado'), netoVenta) + sum(T.filter(x => x.estado === 'Recibido'), x => x.neto_mxn) + sum(O, x => x.monto_neto) - sum(F, x => x.monto_mxn);
+  const liquido = cfgNum('saldo_inicial') + sum(V.filter(x => x.estado_cobro === 'Cobrado'), netoVenta) + sum(T.filter(x => x.estado === 'Recibido'), x => x.neto_mxn) + sum(O, x => x.monto_neto) - sum(F, x => x.monto_mxn) - sum(D.Trading_Cuentas, x => x.costo_mxn);
   const transito = sum(V.filter(x => x.estado_cobro !== 'Cobrado'), netoVenta) + sum(T.filter(x => x.estado !== 'Recibido'), x => x.neto_mxn);
   const muerto = sum(D.Inventario, i => i.stock_actual * (+i.costo_unitario + +i.costo_envio_prorrateado));
   const ing = sum(V.filter(x => mk(x.fecha) === cur), x => x.utilidad_neta) + sum(T.filter(x => mk(x.fecha) === cur), x => x.neto_mxn) + sum(O.filter(x => mk(x.fecha) === cur), x => x.monto_neto);
-  const egr = sum(F.filter(x => mk(x.fecha) === cur), x => x.monto_mxn);
+  const egr = sum(F.filter(x => mk(x.fecha) === cur), x => x.monto_mxn) + sum(D.Trading_Cuentas.filter(x => mk(x.fecha) === cur), x => x.costo_mxn);
   return { liquido, transito, muerto, ing, egr, balance: ing - egr, sat: Math.max(0, ing) * cfgNum('retencion', 10) / 100 };
 }
 const kpi = (l, v, sub = '', c = '', hero = '') => `<div class="card kpi ${hero}"><span class="mu">${l}</span><b class="${c}">${v}</b><small>${sub}</small></div>`;
@@ -129,7 +131,7 @@ function viewResumen() {
       { label: 'E-commerce', data: by(D.Ventas_Ecommerce, x => x.utilidad_neta), backgroundColor: C.sand, stack: 'i' },
       { label: 'Trading', data: by(D.Trading_Retiros, x => x.neto_mxn), backgroundColor: C.pos, stack: 'i' },
       { label: 'Otros', data: by(D.Otros_Ingresos, x => x.monto_neto), backgroundColor: C.slate, stack: 'i' },
-      { label: 'Egresos', type: 'line', data: by(D.Finanzas_Personales, x => x.monto_mxn), borderColor: C.neg, backgroundColor: C.neg, tension: .3 }]
+      { label: 'Egresos', type: 'line', data: by(D.Finanzas_Personales, x => x.monto_mxn).map((v, i) => v + sum(D.Trading_Cuentas.filter(x => mk(x.fecha) === M[i]), x => x.costo_mxn)), borderColor: C.neg, backgroundColor: C.neg, tension: .3 }]
   }, { stack: true });
 }
 
@@ -152,21 +154,36 @@ function viewEcom() {
   $('#f-to').onchange = e => { E.to = e.target.value; viewEcom(); };
 }
 
+const TR = { modo: 'Todas' };
 function viewTrading() {
-  const B = [...D.Trading_Bitacora].sort((a, b) => a.fecha.localeCompare(b.fecha)), R = D.Trading_Retiros;
+  const all = [...D.Trading_Bitacora].sort((a, b) => a.fecha.localeCompare(b.fecha)), R = D.Trading_Retiros, Cu = D.Trading_Cuentas;
+  const B = all.filter(x => TR.modo === 'Todas' || (TR.modo === 'Fondeada') === (x.fase === 'Fondeada'));
   const w = B.filter(x => x.resultado_usd > 0), l = B.filter(x => x.resultado_usd < 0);
   const gw = sum(w, x => x.resultado_usd), gl = Math.abs(sum(l, x => x.resultado_usd));
+  const last = {};
+  [...Cu].sort((a, b) => a.fecha.localeCompare(b.fecha)).forEach(x => { const p = last[x.cuenta] || {}; last[x.cuenta] = { ...x, fondeadora: x.fondeadora || p.fondeadora, tamano_usd: +x.tamano_usd || p.tamano_usd }; });
+  const ac = Object.values(last).map(x => ({ ...x, gastado: sum(Cu.filter(c => c.cuenta === x.cuenta), c => c.costo_mxn), pnl: sum(all.filter(t => t.cuenta === x.cuenta), t => t.resultado_usd) }));
+  const n = e => ac.filter(x => x.estado === e).length, inv = sum(Cu, x => x.costo_mxn), ret = sum(R.filter(x => x.estado === 'Recibido'), x => x.neto_mxn);
   $('#t-trading').innerHTML = `<div class="grid g4" style="margin-top:6px">
+    ${kpi('Invertido en evaluaciones', mxn(inv), 'Cuenta como gasto, no como ingreso', 'neg')}
+    ${kpi('Retirado a banco', mxn(ret), 'Único dinero de trading que cuenta como ingreso', 'pos')}
+    ${kpi('Resultado real', mxn(ret - inv), 'Retirado menos invertido', cls(ret - inv))}
+    ${kpi('Cuentas', `${n('Fase 1') + n('Fase 2')} · ${n('Fondeada')} · ${n('Perdida')}`, 'En evaluación · fondeadas · perdidas')}</div>
+  <div class="bar" style="margin-top:14px"><select id="f-modo" aria-label="Tipo de cuenta">${['Todas', 'Evaluación', 'Fondeada'].map(m => `<option ${m === TR.modo ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+  <p class="mu" style="margin-bottom:12px;font-size:13px">${TR.modo === 'Fondeada' ? 'Operaciones en cuentas fondeadas.' : 'Las operaciones en evaluación son simuladas: se muestran aquí pero no suman a tus ingresos.'}</p>
+  <div class="grid g4">
     ${kpi('Win rate', (B.length ? w.length / B.length * 100 : 0).toFixed(1) + '%', `${w.length} ganadas · ${l.length} perdidas`)}
     ${kpi('Profit factor', gl ? (gw / gl).toFixed(2) : '–')}
     ${kpi('Ganancia vs. pérdida promedio', `${usd(w.length ? gw / w.length : 0)} / ${usd(l.length ? -gl / l.length : 0)}`)}
-    ${kpi('Retirado a banco', mxn(sum(R.filter(x => x.estado === 'Recibido'), x => x.neto_mxn)), 'Neto en MXN tras comisiones', 'pos')}</div>
+    ${kpi('Resultado acumulado', usd(gw - gl), TR.modo === 'Fondeada' ? '' : 'Incluye simulación', cls(gw - gl))}</div>
   <div class="grid g2" style="margin-top:14px">${chartCard('c-eq', 'Curva de equidad y drawdown (USD)')}${chartCard('c-day', 'Resultado diario (USD)')}</div>
+  <h2>Cuentas y evaluaciones</h2><div class="card">${tbl([['Cuenta', x => x.cuenta], ['Fondeadora', x => x.fondeadora || '–'], ['Tamaño', x => usd(x.tamano_usd), 'r'], ['Estado', x => x.estado === 'Perdida' ? `<span class="chip">Perdida</span>` : x.estado], ['Invertido', x => mxn(x.gastado), 'r'], ['P&L USD', x => `<span class="${x.estado === 'Fondeada' ? cls(x.pnl) : 'mu'}">${usd(x.pnl)}</span>`, 'r']], ac)}</div>
   <h2>Retiros</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Cuenta', x => x.cuenta], ['USD', x => usd(x.monto_usd), 'r'], ['Neto MXN', x => mxn(x.neto_mxn), 'r'], ['Estado', x => x.estado]], [...R].reverse())}</div>`;
   let acc = 0, peak = 0; const eq = B.map(x => (acc += +x.resultado_usd)), dd = eq.map(v => (peak = Math.max(peak, v), v - peak));
   ch('c-eq', 'line', { labels: B.map(x => x.fecha), datasets: [{ label: 'Equidad', data: eq, borderColor: C.sand, pointRadius: 0, tension: .25 }, { label: 'Drawdown', data: dd, borderColor: C.neg, backgroundColor: 'rgba(217,139,139,.15)', fill: true, pointRadius: 0, tension: .25 }] });
   const day = groupSum(B, x => x.fecha, x => x.resultado_usd), k = Object.keys(day);
   ch('c-day', 'bar', { labels: k, datasets: [{ data: k.map(d => day[d]), backgroundColor: k.map(d => day[d] >= 0 ? C.pos : C.neg), borderRadius: 3 }] }, { leg: false });
+  $('#f-modo').onchange = e => { TR.modo = e.target.value; viewTrading(); };
 }
 
 function viewFin() {
@@ -186,13 +203,14 @@ function render() { VIEWS[tab](); }
 const catKey = v => 'cat_' + ({ 'Gasto Fijo': 'fijo', 'Gasto Variable': 'variable', 'Ahorro/Reserva': 'ahorro' }[v.tipo] || 'fijo');
 const FORMS = {
   venta: { sheet: 'Ventas_Ecommerce', title: 'Venta', f: [['fecha', 'Fecha', 'date'], ['plataforma', 'Plataforma', 'cfg:plataforma'], ['sku', 'Producto', 'sku'], ['unidades', 'Unidades', 'num'], ['precio_bruto', 'Precio de venta bruto', 'num'], ['comision', 'Comisión de plataforma', 'num'], ['envio', 'Envío / logística', 'num'], ['impuestos', 'Impuestos retenidos (ISR/IVA)', 'num'], ['estado_cobro', 'Estado del pago', 'opt:En tránsito,Cobrado']] },
+  cuenta: { sheet: 'Trading_Cuentas', title: 'Cuenta / evaluación', f: [['fecha', 'Fecha', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['fondeadora', 'Fondeadora (solo si es nueva)', 'text'], ['tamano_usd', 'Tamaño de cuenta USD (si es nueva)', 'num'], ['costo_mxn', 'Costo pagado MXN (evaluación o reset)', 'num'], ['estado', 'Estado actual', 'opt:Fase 1,Fase 2,Fondeada,Perdida']] },
   producto: { sheet: 'Inventario', title: 'Producto', f: [['sku', 'SKU', 'text'], ['producto', 'Nombre', 'text'], ['costo_unitario', 'Costo unitario', 'num'], ['costo_envio_prorrateado', 'Envío prorrateado', 'num'], ['stock_inicial', 'Stock inicial', 'num'], ['precio_sugerido', 'Precio sugerido', 'num'], ['stock_minimo', 'Alerta de stock bajo', 'num']] },
   operacion: { sheet: 'Trading_Bitacora', title: 'Operación', f: [['fecha', 'Fecha', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['instrumento', 'Instrumento', 'text'], ['direccion', 'Dirección', 'opt:Buy,Sell'], ['riesgo_pct', 'Riesgo %', 'num'], ['resultado_usd', 'Resultado USD', 'num'], ['resultado_pips', 'Pips / puntos', 'num'], ['fase', 'Estado de la cuenta', 'opt:Fase 1,Fase 2,Fondeada'], ['notas', 'Notas', 'text']] },
   retiro: { sheet: 'Trading_Retiros', title: 'Retiro', f: [['fecha', 'Fecha de solicitud', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['monto_usd', 'Monto bruto USD', 'num'], ['comision_red', 'Comisión de red (USDT TRC20)', 'num'], ['tipo_cambio', 'Tipo de cambio', 'num'], ['estado', 'Estado', 'opt:Solicitado,En tránsito,Recibido']] },
   ingreso: { sheet: 'Otros_Ingresos', title: 'Ingreso', f: [['fecha', 'Fecha', 'date'], ['concepto', 'Concepto', 'text'], ['categoria', 'Categoría', 'cfg:cat_ingreso'], ['monto_bruto', 'Monto bruto', 'num'], ['impuestos', 'Impuestos / retenciones', 'num']] },
   gasto: { sheet: 'Finanzas_Personales', title: 'Gasto', f: [['fecha', 'Fecha', 'date'], ['tipo', 'Tipo', 'opt:Gasto Fijo,Gasto Variable,Ahorro/Reserva'], ['categoria', 'Categoría', 'cfg:*'], ['descripcion', 'Descripción', 'text'], ['monto_mxn', 'Monto MXN', 'num'], ['metodo_pago', 'Método de pago', 'opt:Efectivo,Tarjeta,SPEI']] }
 };
-const TABFORMS = { resumen: ['venta', 'operacion', 'retiro', 'ingreso', 'gasto'], ecommerce: ['venta', 'producto'], trading: ['operacion', 'retiro'], finanzas: ['gasto', 'ingreso'] };
+const TABFORMS = { resumen: ['venta', 'operacion', 'retiro', 'ingreso', 'gasto'], ecommerce: ['venta', 'producto'], trading: ['operacion', 'cuenta', 'retiro'], finanzas: ['gasto', 'ingreso'] };
 
 function optionsFor(f, vals) {
   const t = f[2];
@@ -226,7 +244,7 @@ function openForm(name) {
 function fieldHtml(f) {
   const t = f[2], n = f[0];
   if (t === 'date') return `<input type="date" name="${n}" value="${today()}" required>`;
-  if (t === 'num') return `<input type="number" step="any" name="${n}" inputmode="decimal" required>`;
+  if (t === 'num') return `<input type="number" step="any" name="${n}" inputmode="decimal">`;
   if (t === 'text') return `<input name="${n}">`;
   if (t === 'sku') return `<select name="${n}">${D.Inventario.map(i => `<option value="${i.sku}">${i.producto} (${i.stock_actual})</option>`).join('')}</select>`;
   const o = optionsFor(f, { tipo: 'Gasto Fijo' });
