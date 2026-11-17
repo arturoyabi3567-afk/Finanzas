@@ -60,7 +60,8 @@ td.r,th.r{text-align:right}
 @media(prefers-reduced-motion:no-preference){.sheet{animation:up .22s ease-out}@keyframes up{from{transform:translateY(16px);opacity:0}}}
 
 .meter{height:6px;border-radius:99px;background:var(--s2);overflow:hidden;margin:6px 0 14px}.meter i{display:block;height:100%;background:var(--sand)}.meter.warn i{background:var(--neg)}
-.logo{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:var(--s2);border:1px solid var(--ln);color:var(--sand);font:400 32px/1 'Instrument Serif',serif;margin-bottom:18px}
+.logo{display:block;width:88px;height:88px;border-radius:22.5%;box-shadow:0 0 0 1px var(--ln);margin-bottom:18px}
 .login-box{text-align:center}.login-box .logo{margin:0 auto 18px}
 .login-box form{margin:24px 0 10px;display:grid;gap:10px}.login-box input{text-align:center;letter-spacing:.15em}
 .hb{display:flex;gap:8px}
+.brand{display:flex;align-items:center;gap:10px}.brand img{width:34px;height:34px;border-radius:22.5%;box-shadow:0 0 0 1px var(--ln)}
