@@ -19,6 +19,7 @@ const SCHEMA = {
                         'resultado_usd', 'resultado_pips', 'fase', 'notas'],
   Trading_Retiros:     ['fecha', 'cuenta', 'monto_usd', 'comision_red', 'tipo_cambio',
                         'neto_mxn', 'estado'],
+  Trading_Cuentas:     ['fecha', 'cuenta', 'fondeadora', 'tamano_usd', 'costo_mxn', 'estado'],
   Otros_Ingresos:      ['fecha', 'concepto', 'categoria', 'monto_bruto', 'impuestos', 'monto_neto'],
   Finanzas_Personales: ['fecha', 'tipo', 'categoria', 'descripcion', 'monto_mxn', 'metodo_pago']
 };
