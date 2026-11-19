@@ -112,6 +112,14 @@ async function removeRec(sheet, rec) {
   stockFx(sheet, rec, -1); D[sheet] = D[sheet].filter(x => x !== rec); render();
   try { await sync({ action: 'delete', sheet, _row: rec._row }); } catch (e) { alert('Error de red: ' + e.message); }
 }
+const usd2 = n => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
+const acctState = c => [...D.Trading_Cuentas].filter(x => x.cuenta === c).sort((p, q) => p.fecha.localeCompare(q.fecha)).pop()?.estado;
+const acts = (sheet, rec) => { const i = D[sheet].indexOf(rec); return `<button class="ghost sm" data-act="ed" data-sheet="${sheet}" data-i="${i}">Editar</button> <button class="ghost sm" data-act="del" data-sheet="${sheet}" data-i="${i}">Borrar</button>`; };
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const rec = D[b.dataset.sheet][+b.dataset.i]; if (!rec) return;
+  if (b.dataset.act === 'ed') openForm(SHEETFORM[b.dataset.sheet], rec); else removeRec(b.dataset.sheet, rec);
+});
 const cfg = t => D.Configuracion.filter(x => x.tipo === t).map(x => x.valor);
 const cfgNum = (t, d = 0) => +(D.Configuracion.find(x => x.tipo === t)?.extra ?? d);
 
@@ -159,7 +167,8 @@ function viewEcom() {
     <input type="date" id="f-from" value="${E.from}" aria-label="Desde"><input type="date" id="f-to" value="${E.to}" aria-label="Hasta"></div>
   <div class="grid g3">${kpi('Ventas brutas', mxn(sum(V, x => x.precio_bruto)), `${sum(V, x => x.unidades)} unidades`)}${kpi('Utilidad neta', mxn(sum(V, x => x.utilidad_neta)), 'Después de comisión, envío, impuestos y costo', 'pos')}${kpi('Margen', (sum(V, x => x.precio_bruto) ? sum(V, x => x.utilidad_neta) / sum(V, x => x.precio_bruto) * 100 : 0).toFixed(1) + '%')}</div>
   <div class="grid g2" style="margin-top:14px">${chartCard('c-pl', 'Ventas brutas vs. utilidad neta por plataforma')}${chartCard('c-share', 'Participación de ingresos por canal')}${chartCard('c-top', 'Productos más rentables', 'span2')}</div>
-  <h2>Inventario</h2><div class="card">${tbl([['SKU', i => i.sku], ['Producto', i => i.producto], ['Stock', i => i.stock_actual <= i.stock_minimo ? `<span class="chip">${i.stock_actual} · bajo</span>` : i.stock_actual, 'r'], ['Valor en bodega', i => mxn(i.stock_actual * (+i.costo_unitario + +i.costo_envio_prorrateado)), 'r']], D.Inventario)}</div>`;
+  <h2>Inventario</h2><div class="card">${tbl([['SKU', i => i.sku], ['Producto', i => i.producto], ['Stock', i => i.stock_actual <= i.stock_minimo ? `<span class="chip">${i.stock_actual} · bajo</span>` : i.stock_actual, 'r'], ['Valor en bodega', i => mxn(i.stock_actual * (+i.costo_unitario + +i.costo_envio_prorrateado)), 'r'], ['', i => acts('Inventario', i), 'r']], D.Inventario)}</div>
+  <h2>Ventas recientes</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Plataforma', x => x.plataforma], ['SKU', x => x.sku], ['Unid.', x => x.unidades, 'r'], ['Bruto', x => mxn(x.precio_bruto), 'r'], ['Neta', x => mxn(x.utilidad_neta), 'r'], ['', x => acts('Ventas_Ecommerce', x), 'r']], [...V].reverse().slice(0, 15))}</div>`;
   const P = cfg('plataforma'), g = (f) => P.map(p => sum(V.filter(x => x.plataforma === p), f));
   ch('c-pl', 'bar', { labels: P, datasets: [{ label: 'Bruta', data: g(x => x.precio_bruto), backgroundColor: C.slate, borderRadius: 4 }, { label: 'Neta', data: g(x => x.utilidad_neta), backgroundColor: C.sand, borderRadius: 4 }] });
   ch('c-share', 'doughnut', { labels: P, datasets: [{ data: g(x => x.precio_bruto), backgroundColor: PAL, borderWidth: 0 }] });
@@ -170,7 +179,33 @@ function viewEcom() {
   $('#f-to').onchange = e => { E.to = e.target.value; viewEcom(); };
 }
 
-const TR = { modo: 'Todas' };
+function journal(ac, all) {
+  const names = [...new Set([...ac.map(x => x.cuenta), ...cfg('cuenta_trading')])];
+  if (!names.length) return '';
+  if (!names.includes(TR.cuenta)) TR.cuenta = (ac.find(x => ['Fase 1', 'Fase 2', 'Fondeada'].includes(x.estado)) || {}).cuenta || names[0];
+  const A = ac.find(x => x.cuenta === TR.cuenta) || {}, mine = all.filter(t => t.cuenta === TR.cuenta);
+  const fases = [...new Set(mine.map(t => t.fase))];
+  if (A.estado && A.estado !== 'Perdida' && !fases.includes(A.estado)) fases.push(A.estado);
+  if (!fases.includes(TR.fase)) TR.fase = fases.includes(A.estado) ? A.estado : (fases[fases.length - 1] || '');
+  const size = +A.tamano_usd || 0, byDay = {};
+  mine.filter(t => t.fase === TR.fase).forEach(t => (byDay[t.fecha] = byDay[t.fecha] || []).push(t));
+  let bal = size, peak = size;
+  const rows = Object.keys(byDay).sort().map(d => { const p = sum(byDay[d], x => x.resultado_usd); bal += p; peak = Math.max(peak, bal); return { d, p, bal, ops: byDay[d] }; });
+  const total = bal - size, hoy = sum(byDay[today()] || [], x => x.resultado_usd), dd = peak - bal;
+  const goal = size * (+A.meta_pct || 0) / 100, lim = size * (+A.dd_max_pct || 0) / 100;
+  const sel = (id, list, v) => `<select id="${id}">${list.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  return `<div class="bar" style="margin-top:6px">${sel('j-cuenta', names, TR.cuenta)}${fases.length ? sel('j-fase', fases, TR.fase) : ''}</div>
+  <div class="grid g4">
+    ${kpi('Saldo de la cuenta', usd2(bal), size ? 'Inicio ' + usd2(size) : 'Registra el tamaño en Cuenta / evaluación')}
+    ${kpi('Resultado de la fase', usd2(total), size ? (total / size * 100).toFixed(2) + '% del saldo inicial' : '', cls(total))}
+    ${kpi('Hoy', usd2(hoy), byDay[today()] ? byDay[today()].length + ' operaciones' : 'Sin operaciones', cls(hoy))}
+    ${kpi('Drawdown actual', usd2(dd), lim ? 'Límite ' + usd2(lim) : 'Desde el máximo de la fase')}</div>
+  ${goal || lim ? `<div class="card" style="margin-top:14px">${goal ? `<small>Meta: ${usd2(Math.max(total, 0))} de ${usd2(goal)}</small><div class="meter"><i style="width:${Math.min(100, Math.max(0, total / goal * 100))}%"></i></div>` : ''}${lim ? `<small>Drawdown: ${usd2(dd)} de ${usd2(lim)}</small><div class="meter ${dd / lim > .7 ? 'warn' : ''}"><i style="width:${Math.min(100, dd / lim * 100)}%"></i></div>` : ''}</div>` : ''}
+  <h2>Diario</h2>
+  <p class="mu" style="font-size:13px;margin-bottom:12px">${TR.fase === 'Fondeada' ? 'Cuenta fondeada: resultados reales.' : 'Evaluación: resultados simulados, no cuentan como ingreso.'}</p>
+  ${rows.length ? rows.slice().reverse().map((r, i) => `<details class="day" ${i === 0 ? 'open' : ''}><summary><b>${r.d}</b><span class="${cls(r.p)}">${r.p > 0 ? '+' : ''}${usd2(r.p)}</span><span class="mu">Saldo ${usd2(r.bal)}</span></summary>${tbl([['Instrumento', x => x.instrumento], ['Dir.', x => x.direccion], ['Resultado', x => `<span class="${cls(x.resultado_usd)}">${usd2(x.resultado_usd)}</span>`, 'r'], ['Pips', x => x.resultado_pips, 'r'], ['', x => acts('Trading_Bitacora', x), 'r']], r.ops)}</details>`).join('') : '<p class="mu">Sin operaciones en esta fase. Usa el botón + para registrar la primera.</p>'}`;
+}
+const TR = { modo: 'Todas', cuenta: '', fase: '' };
 function viewTrading() {
   const all = [...D.Trading_Bitacora].sort((a, b) => a.fecha.localeCompare(b.fecha)), R = D.Trading_Retiros, Cu = D.Trading_Cuentas;
   const B = all.filter(x => TR.modo === 'Todas' || (TR.modo === 'Fondeada') === (x.fase === 'Fondeada'));
@@ -180,7 +215,7 @@ function viewTrading() {
   [...Cu].sort((a, b) => a.fecha.localeCompare(b.fecha)).forEach(x => { const p = last[x.cuenta] || {}; last[x.cuenta] = { ...x, fondeadora: x.fondeadora || p.fondeadora, tamano_usd: +x.tamano_usd || p.tamano_usd, meta_pct: +x.meta_pct || p.meta_pct, dd_max_pct: +x.dd_max_pct || p.dd_max_pct }; });
   const ac = Object.values(last).map(x => ({ ...x, gastado: sum(Cu.filter(c => c.cuenta === x.cuenta), c => c.costo_mxn), pnl: sum(all.filter(t => t.cuenta === x.cuenta), t => t.resultado_usd) }));
   const n = e => ac.filter(x => x.estado === e).length, inv = sum(Cu, x => x.costo_mxn), ret = sum(R.filter(x => x.estado === 'Recibido'), x => x.neto_mxn);
-  $('#t-trading').innerHTML = `<div class="grid g4" style="margin-top:6px">
+  $('#t-trading').innerHTML = `${journal(ac, all)}<h2>Resumen de trading</h2><div class="grid g4">
     ${kpi('Invertido en evaluaciones', mxn(inv), 'Cuenta como gasto, no como ingreso', 'neg')}
     ${kpi('Retirado a banco', mxn(ret), 'Único dinero de trading que cuenta como ingreso', 'pos')}
     ${kpi('Resultado real', mxn(ret - inv), 'Retirado menos invertido', cls(ret - inv))}
@@ -193,12 +228,14 @@ function viewTrading() {
     ${kpi('Ganancia vs. pérdida promedio', `${usd(w.length ? gw / w.length : 0)} / ${usd(l.length ? -gl / l.length : 0)}`)}
     ${kpi('Resultado acumulado', usd(gw - gl), TR.modo === 'Fondeada' ? '' : 'Incluye simulación', cls(gw - gl))}</div>
   <div class="grid g2" style="margin-top:14px">${chartCard('c-eq', 'Curva de equidad y drawdown (USD)')}${chartCard('c-day', 'Resultado diario (USD)')}</div>
-  ${rules(ac, all)}<h2>Cuentas y evaluaciones</h2><div class="card">${tbl([['Cuenta', x => x.cuenta], ['Fondeadora', x => x.fondeadora || '–'], ['Tamaño', x => usd(x.tamano_usd), 'r'], ['Estado', x => x.estado === 'Perdida' ? `<span class="chip">Perdida</span>` : x.estado], ['Invertido', x => mxn(x.gastado), 'r'], ['P&L USD', x => `<span class="${x.estado === 'Fondeada' ? cls(x.pnl) : 'mu'}">${usd(x.pnl)}</span>`, 'r']], ac)}</div>
-  <h2>Retiros</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Cuenta', x => x.cuenta], ['USD', x => usd(x.monto_usd), 'r'], ['Neto MXN', x => mxn(x.neto_mxn), 'r'], ['Estado', x => x.estado]], [...R].reverse())}</div>`;
+  <h2>Cuentas y evaluaciones</h2><div class="card">${tbl([['Cuenta', x => x.cuenta], ['Fondeadora', x => x.fondeadora || '–'], ['Tamaño', x => usd(x.tamano_usd), 'r'], ['Estado', x => x.estado === 'Perdida' ? `<span class="chip">Perdida</span>` : x.estado], ['Invertido', x => mxn(x.gastado), 'r'], ['P&L USD', x => `<span class="${x.estado === 'Fondeada' ? cls(x.pnl) : 'mu'}">${usd(x.pnl)}</span>`, 'r']], ac)}</div>
+  <h2>Retiros</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Cuenta', x => x.cuenta], ['USD', x => usd(x.monto_usd), 'r'], ['Neto MXN', x => mxn(x.neto_mxn), 'r'], ['Estado', x => x.estado], ['', x => acts('Trading_Retiros', x), 'r']], [...R].reverse())}</div>`;
   let acc = 0, peak = 0; const eq = B.map(x => (acc += +x.resultado_usd)), dd = eq.map(v => (peak = Math.max(peak, v), v - peak));
   ch('c-eq', 'line', { labels: B.map(x => x.fecha), datasets: [{ label: 'Equidad', data: eq, borderColor: C.sand, pointRadius: 0, tension: .25 }, { label: 'Drawdown', data: dd, borderColor: C.neg, backgroundColor: 'rgba(217,139,139,.15)', fill: true, pointRadius: 0, tension: .25 }] });
   const day = groupSum(B, x => x.fecha, x => x.resultado_usd), k = Object.keys(day);
   ch('c-day', 'bar', { labels: k, datasets: [{ data: k.map(d => day[d]), backgroundColor: k.map(d => day[d] >= 0 ? C.pos : C.neg), borderRadius: 3 }] }, { leg: false });
+  if ($('#j-cuenta')) $('#j-cuenta').onchange = e => { TR.cuenta = e.target.value; TR.fase = ''; viewTrading(); };
+  if ($('#j-fase')) $('#j-fase').onchange = e => { TR.fase = e.target.value; viewTrading(); };
   $('#f-modo').onchange = e => { TR.modo = e.target.value; viewTrading(); };
 }
 
@@ -207,7 +244,8 @@ function viewFin() {
   const cats = [...new Set(F.filter(x => x.tipo !== 'Ahorro/Reserva').map(x => x.categoria))];
   $('#t-finanzas').innerHTML = `<div class="grid g3" style="margin-top:6px">${kpi('Gastos del mes', mxn(sum(F.filter(x => mk(x.fecha) === mk(today()) && x.tipo !== 'Ahorro/Reserva'), x => x.monto_mxn)))}${kpi('Ahorro acumulado', mxn(sum(F.filter(x => x.tipo === 'Ahorro/Reserva'), x => x.monto_mxn)), '', 'pos')}${kpi('Otros ingresos netos', mxn(sum(O, x => x.monto_neto)), `${O.length} registros`)}</div>
   <div class="grid g2" style="margin-top:14px">${chartCard('c-type', 'Fijos vs. variables')}${chartCard('c-cat', 'Evolución mensual por categoría')}</div>
-  ${budget()}<h2>Otros ingresos</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Concepto', x => x.concepto], ['Categoría', x => x.categoria], ['Neto', x => mxn(x.monto_neto), 'r']], [...O].reverse())}</div>`;
+  ${budget()}<h2>Otros ingresos</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Concepto', x => x.concepto], ['Categoría', x => x.categoria], ['Neto', x => mxn(x.monto_neto), 'r'], ['', x => acts('Otros_Ingresos', x), 'r']], [...O].reverse())}</div>
+  <h2>Últimos gastos</h2><div class="card">${tbl([['Fecha', x => x.fecha], ['Tipo', x => x.tipo], ['Categoría', x => x.categoria], ['Monto', x => mxn(x.monto_mxn), 'r'], ['', x => acts('Finanzas_Personales', x), 'r']], [...F].reverse().slice(0, 15))}</div>`;
   ch('c-type', 'doughnut', { labels: tipos, datasets: [{ data: tipos.map(t => sum(F.filter(x => x.tipo === t), x => x.monto_mxn)), backgroundColor: [C.sand, C.slate, C.pos], borderWidth: 0 }] });
   ch('c-cat', 'bar', { labels: M, datasets: cats.map((c, i) => ({ label: c, data: M.map(m => sum(F.filter(x => x.categoria === c && mk(x.fecha) === m), x => x.monto_mxn)), backgroundColor: PAL[i % 6] })) }, { stack: true });
 }
@@ -258,7 +296,7 @@ const FORMS = {
   presupuesto: { sheet: 'Configuracion', title: 'Presupuesto', f: [['valor', 'Categoría', 'cfg:cat_all'], ['extra', 'Límite mensual MXN', 'num']] },
   config: { sheet: 'Configuracion', title: 'Catálogo', f: [['tipo', 'Tipo', 'opt:plataforma,cat_fijo,cat_variable,cat_ahorro,cuenta_trading,cat_ingreso,retencion,saldo_inicial,presupuesto'], ['valor', 'Nombre', 'text'], ['extra', 'Valor extra (comisión %, límite, monto)', 'text']] },
   producto: { sheet: 'Inventario', title: 'Producto', f: [['sku', 'SKU', 'text'], ['producto', 'Nombre', 'text'], ['costo_unitario', 'Costo unitario', 'num'], ['costo_envio_prorrateado', 'Envío prorrateado', 'num'], ['stock_inicial', 'Stock inicial', 'num'], ['precio_sugerido', 'Precio sugerido', 'num'], ['stock_minimo', 'Alerta de stock bajo', 'num']] },
-  operacion: { sheet: 'Trading_Bitacora', title: 'Operación', f: [['fecha', 'Fecha', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['instrumento', 'Instrumento', 'text'], ['direccion', 'Dirección', 'opt:Buy,Sell'], ['riesgo_pct', 'Riesgo %', 'num'], ['resultado_usd', 'Resultado USD', 'num'], ['resultado_pips', 'Pips / puntos', 'num'], ['fase', 'Estado de la cuenta', 'opt:Fase 1,Fase 2,Fondeada'], ['notas', 'Notas', 'text']] },
+  operacion: { sheet: 'Trading_Bitacora', title: 'Operación', f: [['fecha', 'Fecha', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['instrumento', 'Instrumento', 'text'], ['direccion', 'Dirección', 'opt:Buy,Sell'], ['riesgo_pct', 'Riesgo %', 'num'], ['resultado_usd', 'Resultado USD (usa + / − para pérdida)', 'snum'], ['resultado_pips', 'Pips / puntos (+ / −)', 'snum'], ['fase', 'Estado de la cuenta', 'opt:Fase 1,Fase 2,Fondeada'], ['notas', 'Notas', 'text']] },
   retiro: { sheet: 'Trading_Retiros', title: 'Retiro', f: [['fecha', 'Fecha de solicitud', 'date'], ['cuenta', 'Cuenta', 'cfg:cuenta_trading'], ['monto_usd', 'Monto bruto USD', 'num'], ['comision_red', 'Comisión de red (USDT TRC20)', 'num'], ['tipo_cambio', 'Tipo de cambio', 'num'], ['estado', 'Estado', 'opt:Solicitado,En tránsito,Recibido']] },
   ingreso: { sheet: 'Otros_Ingresos', title: 'Ingreso', f: [['fecha', 'Fecha', 'date'], ['concepto', 'Concepto', 'text'], ['categoria', 'Categoría', 'cfg:cat_ingreso'], ['monto_bruto', 'Monto bruto', 'num'], ['impuestos', 'Impuestos / retenciones', 'num']] },
   gasto: { sheet: 'Finanzas_Personales', title: 'Gasto', f: [['fecha', 'Fecha', 'date'], ['tipo', 'Tipo', 'opt:Gasto Fijo,Gasto Variable,Ahorro/Reserva'], ['categoria', 'Categoría', 'cfg:*'], ['descripcion', 'Descripción', 'text'], ['monto_mxn', 'Monto MXN', 'num'], ['metodo_pago', 'Método de pago', 'opt:Efectivo,Tarjeta,SPEI']] }
@@ -287,6 +325,11 @@ function openForm(name, rec) {
       if (v) { const key = f[2] === 'cfg:*' ? catKey(vals()) : f[2].slice(4); const row = { tipo: key, valor: v.trim(), extra: '' }; D.Configuracion.push(row); post('Configuracion', row); refill(); s.value = v.trim(); } else refill();
     } else if (s.name === 'tipo') refill();
   });
+  $$('[data-sign]', form).forEach(b => b.onclick = () => { const i = b.previousElementSibling; i.value = i.value.startsWith('-') ? i.value.slice(1) : '-' + i.value; i.focus(); });
+  if (name === 'operacion' && !rec) {
+    const sf = () => { const st = acctState(form.elements.cuenta.value); if (['Fase 1', 'Fase 2', 'Fondeada'].includes(st)) form.elements.fase.value = st; };
+    form.elements.cuenta.addEventListener('change', sf); sf();
+  }
   if (rec) $$('[name]', form).forEach(el => {
     const v = rec[el.name]; if (v === undefined || v === '') return;
     if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === String(v))) el.add(new Option(v, v));
@@ -294,7 +337,7 @@ function openForm(name, rec) {
   });
   form.onsubmit = async e => {
     e.preventDefault();
-    const row = vals(); F.f.forEach(f => { if (f[2] === 'num') row[f[0]] = +row[f[0]] || 0; });
+    const row = vals(); F.f.forEach(f => { if (f[2] === 'num' || f[2] === 'snum') row[f[0]] = parseFloat(String(row[f[0]]).replace(',', '.')) || 0; });
     derive(name, row); const sh = F.sheet;
     if (rec) {
       if (URL_ && !rec._row) return alert('Espera a que termine de sincronizar e inténtalo de nuevo.');
@@ -311,6 +354,7 @@ function openForm(name, rec) {
 function fieldHtml(f) {
   const t = f[2], n = f[0];
   if (t === 'date') return `<input type="date" name="${n}" value="${today()}" required>`;
+  if (t === 'snum') return `<div class="sgn"><input type="text" inputmode="decimal" name="${n}" autocomplete="off" pattern="-?[0-9]+([.,][0-9]+)?" title="Número, con - si es pérdida" required><button type="button" class="ghost sm" data-sign aria-label="Cambiar entre ganancia y pérdida">+ / −</button></div>`;
   if (t === 'num') return `<input type="number" step="any" name="${n}" inputmode="decimal">`;
   if (t === 'text') return `<input name="${n}">`;
   if (t === 'sku') return `<select name="${n}">${D.Inventario.map(i => `<option value="${i.sku}">${i.producto} (${i.stock_actual})</option>`).join('')}</select>`;
