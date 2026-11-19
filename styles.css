@@ -65,3 +65,8 @@ td.r,th.r{text-align:right}
 .login-box form{margin:24px 0 10px;display:grid;gap:10px}.login-box input{text-align:center;letter-spacing:.15em}
 .hb{display:flex;gap:8px}
 .brand{display:flex;align-items:center;gap:10px}.brand img{width:34px;height:34px;border-radius:22.5%;box-shadow:0 0 0 1px var(--ln)}
+.sgn{display:flex;gap:8px}.sgn button{flex:none;padding:6px 14px}
+.day{background:var(--s1);border:1px solid var(--ln);border-radius:12px;margin-bottom:10px}
+.day summary{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;cursor:pointer;list-style:none}
+.day summary::-webkit-details-marker{display:none}
+.day .scroll{padding:0 12px 10px}
